@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+
+</head>
+<style>
+    #parent {
+        margin: 0 auto;
+        width: 1000px
+    }
+
+</style>
+
+<body>
+
+<div id="parent">
+    <div>
+        服务IP<input type="text" id="serverIp">
+        服务PORT<input type="text" id="serverPort">
+        模拟终端数量 <input type="text" id="clientCount" >
+        gps间隔 <input type="text" id="gpsInterval" style="width: 80px" placeholder="默认10秒">
+        <button id="begin">开始</button>
+        <button id="end">结束</button>
+    </div>
+    <div id="count_div" style="margin-top: 10px;margin-bottom: 10px">
+        目标启动终端：<b id="targetCount">0</b>
+        注册成功：<b style="color: green" id="registerSuccessCount">0</b>
+        注册失败：<b style="color: red" id="registerFailedCount">0</b>
+        GPS成功响应数：<b style="color: blue" id="gpsCount">0</b>
+    </div>
+    <div>
+        <!--<input id = "runMessage",type="text" class="scrollabletextbox" name="note" value="" style="width: 1000px;margin: 0 auto">-->
+        <textarea id="runMessage" rows="100" style="width: 100%;height:400px;margin: 0 auto;
+        overflow-y:visible"></textarea>
+    </div>
+</div>
+
+</body>
+<script>
+    var begin = document.getElementById("begin");
+    var end = document.getElementById("end");
+
+    var serverIpEle = document.getElementById("serverIp");
+    var serverPortEle = document.getElementById("serverPort");
+    var clientCountEle = document.getElementById("clientCount");
+    var gpsIntervalEle = document.getElementById("gpsInterval");
+
+    var runMessageEle = document.getElementById("runMessage");
+
+    var targetCountEle = document.getElementById("targetCount");
+    var registerSuccessCountEle = document.getElementById("registerSuccessCount");
+    var registerFailedCountEle = document.getElementById("registerFailedCount");
+    var gpsCountEle = document.getElementById("gpsCount");
+
+    var ws = null;
+    end.onclick = function () {
+        if (ws != null) {
+            ws.send(1);
+        }
+    }
+
+    begin.onclick = function () {
+        var serverIp = serverIpEle.value;
+        var serverPort = serverPortEle.value;
+        var clientCount = clientCountEle.value;
+        var gpsInterval = gpsIntervalEle.value;
+        targetCountEle.innerText =clientCount;
+        registerSuccessCountEle.innerText = "0";
+        registerFailedCountEle.innerText = "0";
+
+
+        ws = new WebSocket("ws://127.0.0.1:8001/action/" + serverIp + "/" + serverPort + "/" + clientCount+"/"+gpsInterval);
+        ws.binaryType = "blob";
+        ws.onopen = function () {
+            ws.send(0);
+        }
+        ws.onmessage = function (content) {
+            var jsonObj = JSON.parse(content.data);
+            var type = jsonObj.type;
+            if(1 == type){
+                registerSuccessCountEle.innerText = parseInt(registerSuccessCountEle.innerText)+1;
+            }else if(2 == type){
+                registerFailedCountEle.innerText = parseInt(registerFailedCountEle.innerText)+1;
+            } else if(4 == type){
+                gpsCountEle.innerText = jsonObj.msg;
+                return;
+            }
+            let msg = jsonObj.msg;
+            runMessageEle.value = runMessageEle.value + msg;
+
+            setInterval(function(){
+                runMessageEle.scrollTop = runMessageEle.scrollHeight;
+            }, 1000);
+        }
+        ws.onerror = function (err) {
+            runMessageEle.value = "onerror";
+            ws = null;
+        }
+
+    }
+
+
+</script>
+</html>
