@@ -80,7 +80,7 @@
         </dependency>
         <dependency>
             <groupId>com.yangjie</groupId>
-            <artifactId>bitoperater</artifactId>
+            <artifactId>bitoperator</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
     </dependencies>

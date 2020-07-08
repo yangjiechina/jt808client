@@ -14,7 +14,7 @@
     <packaging>pom</packaging>
     <version>1.0-SNAPSHOT</version>
     <modules>
-        <module>bitoperater</module>
+        <module>bitoperator</module>
         <module>client</module>
     </modules>
 
