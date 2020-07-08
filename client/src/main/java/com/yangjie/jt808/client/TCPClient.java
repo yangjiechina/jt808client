@@ -7,6 +7,7 @@ import com.yangjie.bitoperator.utils.SizeUtils;
 import com.yangjie.jt808.bean.*;
 import com.yangjie.jt808.bean.base.Message;
 import com.yangjie.jt808.constants.MessageIdsConstants;
+import com.yangjie.jt808.constants.ResultStatusConstants;
 import com.yangjie.jt808.message.MessageManager;
 import com.yangjie.jt808.message.SyncFuture;
 import com.yangjie.jt808.utils.ThreadUtils;
@@ -220,15 +221,11 @@ public class TCPClient {
         public void decodePlatformCommonReply(byte[] data) {
             Object o = BitOperator.decode(data, Message.class).genericType(PlatformCommonReply.class).doDecode();
             if (o != null) {
-                Message<PlatformCommonReply> result = (Message<PlatformCommonReply>) o;
-                int requestMsgId = result.getBody().getId();
-                if (LOCATION == requestMsgId) {
-                    //sendMessage(GPS_TYPE, buildMessage(Long.toHexString(phone), " gps响应 "));
-                    sendMessage(GPS_TYPE, " gps响应 ");
-                }
-                String key = buildKey(requestMsgId, result.getBody().getFlowNumber());
-
-                messageManager.put(key, o);
+                PlatformCommonReply platformCommonReply = ((Message<PlatformCommonReply>) o).getBody();
+                int result = platformCommonReply.getResult();
+                int requestMsgId = platformCommonReply.getId();
+                String key = buildKey(requestMsgId, platformCommonReply.getFlowNumber());
+                messageManager.put(key, result);
             }
         }
 
@@ -259,7 +256,7 @@ public class TCPClient {
             sendPacket(Unpooled.wrappedBuffer(new byte[]{0x07E}, registerData, new byte[]{0x7E}));
             log.info("{} 发起注册 >>> {}", phone, HexStringUtils.toHexString(registerData));
             sendMessage(buildMessage(Long.toHexString(phone), " 发起注册 ", HexStringUtils.toHexString(registerData)));
-            String key = String.valueOf(REGISTER_REPLY).concat(String.valueOf(flowNumber));
+            String key = buildKey(REGISTER_REPLY, flowNumber);
             SyncFuture<?> receive = messageManager.receive(key);
             Object result = receive.get(5, TimeUnit.SECONDS);
             int resultCode = -1;
@@ -327,19 +324,28 @@ public class TCPClient {
                 //sendAuthentication(code);
             }
         }
-
-        public void sendLocation() {
+        public void sendLocation() throws InterruptedException {
             Location location = new Location();
-            Message<Location> message = new Message<>(MessageIdsConstants.LOCATION, SizeUtils.getObjByteSize(location), phone, flowNumber, location);
+            Message<Location> message = new Message<>(LOCATION, SizeUtils.getObjByteSize(location), phone, flowNumber, location);
             byte[] locationData = BitOperator.encode(message).doEncode().toArray();
             sendPacket(Unpooled.wrappedBuffer(new byte[]{0x07E}, locationData, new byte[]{0x7E}));
             log.info("{} 发送位置消息 >>> {}", phone, HexStringUtils.toHexString(locationData));
+            String key = buildKey(LOCATION, flowNumber);
+            SyncFuture<?> receive = messageManager.receive(key);
+            Object result = receive.get(WebSocketController.interval, TimeUnit.SECONDS);
+            if (result != null) {
+                int status = (int) result;
+                if (ResultStatusConstants.SUCCESS == status) {
+                    sendMessage(GPS_TYPE, " gps success  ");
+                }
+            }
             //sendMessage(buildMessage(Long.toHexString(phone), " 发送位置消息 >>> ", HexStringUtils.toHexString(locationData)));
             flowNumber++;
         }
 
+
         public String buildKey(int msgId, int flowNumber) {
-            return String.valueOf(msgId).concat(String.valueOf(flowNumber));
+            return String.valueOf(phone).concat(String.valueOf(msgId)).concat(String.valueOf(flowNumber));
         }
 
         private void sendPacket(ByteBuf byteBuf) {
