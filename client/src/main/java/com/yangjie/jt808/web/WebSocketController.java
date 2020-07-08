@@ -39,6 +39,7 @@ public class WebSocketController implements TCPClient.OnNotifyListener {
     public static int gpsCount;
     public static int interval;
     private Pattern pattern = Pattern.compile("[0-9]*");
+    private ThreadUtils.SimpleTask notifyGpsCountTask;
 
     @OnOpen
     public void onOpen(Session session) {
@@ -53,14 +54,19 @@ public class WebSocketController implements TCPClient.OnNotifyListener {
             interval = 1;
         }
         WebSocketController.interval = interval;
-        THREAD_POOL_SIZE = clientCount * 2;
+        THREAD_POOL_SIZE = clientCount * 3;
         if (0 == messages) {
             gpsCount = 0;
             sendText("开始执行...");
+            releaseAllClients();
             if (clientCount > 0) {
+
                 clientMap = new ConcurrentHashMap<>((int) (clientCount * 1.5));
             }
-            ThreadUtils.executeBySingleAtFixRate(new ThreadUtils.SimpleTask<Object>() {
+            if (notifyGpsCountTask != null && !notifyGpsCountTask.isDone()) {
+                notifyGpsCountTask.cancel();
+            }
+            notifyGpsCountTask = new ThreadUtils.SimpleTask<Object>() {
                 int lastCount = 0;
 
                 @Override
@@ -76,7 +82,8 @@ public class WebSocketController implements TCPClient.OnNotifyListener {
                 public void onSuccess(Object result) {
 
                 }
-            }, 1, TimeUnit.SECONDS);
+            };
+            ThreadUtils.executeBySingleAtFixRate(notifyGpsCountTask, 1, TimeUnit.SECONDS);
             while (clientCount > 0) {
                 checkPhone();
                 TCPClient tcpClient = new TCPClient(beginPhone, cityCode + String.valueOf(beginPlateNumber));
@@ -95,7 +102,7 @@ public class WebSocketController implements TCPClient.OnNotifyListener {
 
             }
         } else if (1 == messages) {
-            sendText("结束执行...");
+            sendText("\r\n结束执行...");
             releaseAllClients();
         }
         log.info("onMessage");
@@ -118,7 +125,10 @@ public class WebSocketController implements TCPClient.OnNotifyListener {
                 tcpClient.release();
                 iterator.remove();
             }
+            clientMap = null;
         }
+        gpsCount = 0;
+        beginPhone = 0x013500000000L;
     }
 
     public void sendText(String message) {
@@ -146,6 +156,7 @@ public class WebSocketController implements TCPClient.OnNotifyListener {
         log.info("onClose");
         this.session = null;
         releaseAllClients();
+
     }
 
     @OnError

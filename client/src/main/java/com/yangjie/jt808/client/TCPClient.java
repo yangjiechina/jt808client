@@ -48,6 +48,7 @@ public class TCPClient {
 
     private ThreadUtils.SimpleTask<Object> task;
     private ThreadUtils.SimpleTask<Object> heartBeatTask;
+    private ThreadUtils.SimpleTask<Object> uploadPositionTask;
 
     public TCPClient(long phone, String plateNumber) {
         this.phone = phone;
@@ -123,12 +124,14 @@ public class TCPClient {
     }
 
     public void cancelTasks() {
-        if (task != null && !task.isDone()) {
+        if (task != null) {
             task.cancel();
         }
-        if (heartBeatTask != null && !heartBeatTask.isDone()) {
+        if (heartBeatTask != null) {
             heartBeatTask.cancel();
-
+        }
+        if (uploadPositionTask != null) {
+            uploadPositionTask.cancel();
         }
     }
 
@@ -245,13 +248,6 @@ public class TCPClient {
             sendPacket(Unpooled.wrappedBuffer(new byte[]{0x07E}, heartBeatData, new byte[]{0x7E}));
             log.info("{} 发送心跳 >>> {}", phone, HexStringUtils.toHexString(heartBeatData));
             flowNumber++;
-            try {
-                Thread.sleep(1000 * 10);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            sendHeartBeat();
-
         }
 
         public void sendRegister() throws InterruptedException {
@@ -310,8 +306,20 @@ public class TCPClient {
 
                     }
                 };
-                ThreadUtils.executeByFixed(WebSocketController.THREAD_POOL_SIZE, heartBeatTask);
-                sendLocation();
+                uploadPositionTask = new ThreadUtils.SimpleTask<Object>() {
+                    @Override
+                    public Object doInBackground() throws Throwable {
+                        sendLocation();
+                        return null;
+                    }
+
+                    @Override
+                    public void onSuccess(Object result) {
+
+                    }
+                };
+                ThreadUtils.executeByFixedAtFixRate(WebSocketController.THREAD_POOL_SIZE, heartBeatTask, 10, TimeUnit.SECONDS);
+                ThreadUtils.executeByFixedAtFixRate(WebSocketController.THREAD_POOL_SIZE, uploadPositionTask, WebSocketController.interval, TimeUnit.SECONDS);
 
             } else {
                 sendMessage(STARTED_FAILED_TYPE, buildMessage(Long.toHexString(phone), " 鉴权失败 "));
@@ -328,12 +336,6 @@ public class TCPClient {
             log.info("{} 发送位置消息 >>> {}", phone, HexStringUtils.toHexString(locationData));
             //sendMessage(buildMessage(Long.toHexString(phone), " 发送位置消息 >>> ", HexStringUtils.toHexString(locationData)));
             flowNumber++;
-            try {
-                Thread.sleep(1000 * WebSocketController.interval);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            sendLocation();
         }
 
         public String buildKey(int msgId, int flowNumber) {
@@ -351,13 +353,6 @@ public class TCPClient {
                 mChannel.writeAndFlush(Unpooled.wrappedBuffer(data));
             }
         }
-    }
-
-    public static void main(String[] args) {
-/*        TCPClient tcpClient = new TCPClient();
-        tcpClient.start(10000, "127.0.0.1", 7611);
-        Scanner scanner = new Scanner(System.in);
-        scanner.next();*/
     }
 
     public static void main1(String[] args) throws ClassNotFoundException {
