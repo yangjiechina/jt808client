@@ -1120,7 +1120,7 @@ public final class ThreadUtils {
 
         @Override
         public void onFail(Throwable t) {
-            System.out.println("ThreadUtils onFail: ");
+            System.out.println("ThreadUtils onFail: "+t.getMessage());
         }
 
     }

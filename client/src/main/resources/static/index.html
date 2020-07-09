@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <title>jt808客户端测试工具</title>
 
 </head>
 <style>
@@ -29,6 +29,7 @@
         注册成功：<b style="color: green" id="registerSuccessCount">0</b>
         注册失败：<b style="color: red" id="registerFailedCount">0</b>
         GPS成功响应数：<b style="color: blue" id="gpsCount">0</b>
+        <label>保存到excel<input type="checkbox" value="" id="hasSaveData" checked="checked"/></label>
     </div>
     <div>
         <!--<input id = "runMessage",type="text" class="scrollabletextbox" name="note" value="" style="width: 1000px;margin: 0 auto">-->
@@ -53,6 +54,7 @@
     var registerSuccessCountEle = document.getElementById("registerSuccessCount");
     var registerFailedCountEle = document.getElementById("registerFailedCount");
     var gpsCountEle = document.getElementById("gpsCount");
+    var hasSaveDataEle = document.getElementById("hasSaveData");
 
     var ws = null;
     end.onclick = function () {
@@ -69,9 +71,10 @@
         targetCountEle.innerText =clientCount;
         registerSuccessCountEle.innerText = "0";
         registerFailedCountEle.innerText = "0";
+        var hasSaveData = hasSaveDataEle.checked;
+        runMessageEle.value = "";
 
-
-        ws = new WebSocket("ws://127.0.0.1:8001/action/" + serverIp + "/" + serverPort + "/" + clientCount+"/"+gpsInterval);
+        ws = new WebSocket("ws://127.0.0.1:8001/action/" + serverIp + "/" + serverPort + "/" + clientCount+"/"+gpsInterval+"/"+hasSaveData);
         ws.binaryType = "blob";
         ws.onopen = function () {
             ws.send(0);

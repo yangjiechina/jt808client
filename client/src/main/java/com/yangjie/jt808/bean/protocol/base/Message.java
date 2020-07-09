@@ -1,4 +1,4 @@
-package com.yangjie.jt808.bean.base;
+package com.yangjie.jt808.bean.protocol.base;
 
 
 import com.yangjie.bitoperator.annotations.BitsProperty;
@@ -26,6 +26,8 @@ public class Message<T> {
 
     @BitsProperty(length = 1, codec = CheckCodec.class)
     private int checkCode;
+
+    private String responseHexString;
 
     public Message() {
     }
@@ -96,4 +98,11 @@ public class Message<T> {
         this.checkCode = checkCode;
     }
 
+    public String getResponseHexString() {
+        return responseHexString;
+    }
+
+    public void setResponseHexString(String responseHexString) {
+        this.responseHexString = responseHexString;
+    }
 }

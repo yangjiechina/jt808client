@@ -1,4 +1,4 @@
-package com.yangjie.jt808.bean;
+package com.yangjie.jt808.bean.protocol;
 
 import com.yangjie.bitoperator.annotations.BitsProperty;
 import com.yangjie.bitoperator.enums.DataFormat;

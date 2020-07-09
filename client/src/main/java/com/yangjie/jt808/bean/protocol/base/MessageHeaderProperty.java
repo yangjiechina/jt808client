@@ -1,4 +1,4 @@
-package com.yangjie.jt808.bean.base;
+package com.yangjie.jt808.bean.protocol.base;
 
 import com.yangjie.bitoperator.annotations.BitsProperty;
 import com.yangjie.bitoperator.codec.BooleanCodec;

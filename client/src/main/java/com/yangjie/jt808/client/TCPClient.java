@@ -1,11 +1,17 @@
 package com.yangjie.jt808.client;
 
+import com.alibaba.excel.EasyExcel;
+import com.alibaba.excel.annotation.ExcelIgnore;
+import com.alibaba.excel.annotation.ExcelProperty;
+import com.alibaba.excel.annotation.write.style.ColumnWidth;
 import com.yangjie.bitoperator.BitOperator;
 import com.yangjie.bitoperator.converters.ByteArrayToNumberUtils;
 import com.yangjie.bitoperator.utils.HexStringUtils;
 import com.yangjie.bitoperator.utils.SizeUtils;
 import com.yangjie.jt808.bean.*;
-import com.yangjie.jt808.bean.base.Message;
+import com.yangjie.jt808.bean.protocol.base.Message;
+import com.yangjie.jt808.bean.protocol.*;
+import com.yangjie.jt808.cache.ExcelCache;
 import com.yangjie.jt808.constants.MessageIdsConstants;
 import com.yangjie.jt808.constants.ResultStatusConstants;
 import com.yangjie.jt808.message.MessageManager;
@@ -25,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
+import java.util.Date;
 import java.util.concurrent.TimeUnit;
 
 import static com.yangjie.jt808.bean.Result.*;
@@ -33,26 +40,47 @@ import static com.yangjie.jt808.constants.MessageIdsConstants.*;
 
 public class TCPClient {
 
+    @ExcelIgnore
     private Logger log = LoggerFactory.getLogger(TCPClient.class);
-
+    @ExcelIgnore
     private EventLoopGroup mWorkerGroup;
-
+    @ExcelIgnore
     private static final int CONNECT_TIME_OUT = 5000;
-
-    private long phone;
-
-    private String plateNumber;
-
+    @ExcelIgnore
     private OnNotifyListener onNotifyListener;
-
+    @ExcelIgnore
     private StringBuffer stringBuffer = new StringBuffer(100);
-
+    @ExcelIgnore
     private ThreadUtils.SimpleTask<Object> task;
+    @ExcelIgnore
     private ThreadUtils.SimpleTask<Object> heartBeatTask;
+    @ExcelIgnore
     private ThreadUtils.SimpleTask<Object> uploadPositionTask;
+
+    @ExcelIgnore
+    private long phone;
+    @ExcelProperty(value = "手机号")
+    @ColumnWidth(12)
+    private String hexPhone;
+    @ExcelProperty(value = "车牌号")
+    private String plateNumber;
+    @ExcelProperty(value = "注册成功")
+    private String registeredSuccess = "否";
+    @ExcelProperty(value = "鉴权成功")
+    private String authenticationSuccess = "否";
+    @ExcelProperty(value = "鉴权码")
+    private String authenticationCode;
+    @ExcelProperty(value = "gps发送总数")
+    private int gpsSendCount;
+    @ExcelProperty(value = "gps成功数")
+    private int gpsSuccessCount;
+    @ExcelProperty(value = "gps失败数")
+    private int gpsFailedCount;
+
 
     public TCPClient(long phone, String plateNumber) {
         this.phone = phone;
+        this.hexPhone = Long.toHexString(phone);
         this.plateNumber = plateNumber;
     }
 
@@ -89,17 +117,17 @@ public class TCPClient {
                     ChannelFuture channelFuture = clientBootstrap.connect();
                     boolean connectStatus = channelFuture.await(CONNECT_TIME_OUT, TimeUnit.MILLISECONDS);
                     if (connectStatus) {
-                    /*    sendMessage(STARTED_SUCCESS_TYPE, buildMessage(Long.toHexString(phone), " 连接服务成功"));
+                    /*    sendMessage(STARTED_SUCCESS_TYPE, buildMessage(hexPhone, " 连接服务成功"));
                         log.info("{} 连接服务成功", phone);*/
                         channelFuture.channel().closeFuture().sync();
                     } else {
                         log.info("{} 连接服务失败", phone);
-                        sendMessage(STARTED_FAILED_TYPE, buildMessage(Long.toHexString(phone), " 连接服务失败"));
+                        sendMessage(STARTED_FAILED_TYPE, buildMessage(hexPhone, " 连接服务失败"));
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
                     log.error("{} 启动client失败 >>> {}", phone, e.getMessage());
-                    sendMessage(STARTED_FAILED_TYPE, buildMessage(Long.toHexString(phone), " 启动client失败 port ", String.valueOf(localPort), "\r\n", e.getMessage()));
+                    sendMessage(STARTED_FAILED_TYPE, buildMessage(hexPhone, " 启动client失败 port ", String.valueOf(localPort), "\r\n", e.getMessage()));
                 } finally {
                     unBind();
                 }
@@ -221,11 +249,13 @@ public class TCPClient {
         public void decodePlatformCommonReply(byte[] data) {
             Object o = BitOperator.decode(data, Message.class).genericType(PlatformCommonReply.class).doDecode();
             if (o != null) {
-                PlatformCommonReply platformCommonReply = ((Message<PlatformCommonReply>) o).getBody();
-                int result = platformCommonReply.getResult();
+                Message<PlatformCommonReply> message = (Message<PlatformCommonReply>) o;
+                message.setResponseHexString(HexStringUtils.toHexString(data));
+                PlatformCommonReply platformCommonReply = message.getBody();
+                //int result = platformCommonReply.getResult();
                 int requestMsgId = platformCommonReply.getId();
                 String key = buildKey(requestMsgId, platformCommonReply.getFlowNumber());
-                messageManager.put(key, result);
+                messageManager.put(key, message);
             }
         }
 
@@ -255,7 +285,7 @@ public class TCPClient {
             byte[] registerData = BitOperator.encode(message).doEncode().toArray();
             sendPacket(Unpooled.wrappedBuffer(new byte[]{0x07E}, registerData, new byte[]{0x7E}));
             log.info("{} 发起注册 >>> {}", phone, HexStringUtils.toHexString(registerData));
-            sendMessage(buildMessage(Long.toHexString(phone), " 发起注册 ", HexStringUtils.toHexString(registerData)));
+            sendMessage(buildMessage(hexPhone, " 发起注册 ", HexStringUtils.toHexString(registerData)));
             String key = buildKey(REGISTER_REPLY, flowNumber);
             SyncFuture<?> receive = messageManager.receive(key);
             Object result = receive.get(5, TimeUnit.SECONDS);
@@ -267,13 +297,15 @@ public class TCPClient {
                     flowNumber++;
                     String token = registerReplyMessage.getBody().getAuthenticationCode();
                     log.info("{} 注册成功 token >>> {}", phone, token);
-                    sendMessage(buildMessage(Long.toHexString(phone), " 注册成功 token >>>", token));
+                    registeredSuccess = "是";
+                    authenticationCode = token;
+                    sendMessage(buildMessage(hexPhone, " 注册成功 token >>>", token));
                     sendAuthentication(token);
                     return;
                 }
             }
             log.info("{} 注册失败 result >>>> {}", phone, resultCode == -1 ? "未响应" : String.valueOf(resultCode));
-            sendMessage(STARTED_FAILED_TYPE, buildMessage(Long.toHexString(phone), " 注册失败 result >>>>", resultCode == -1 ? "未响应" : String.valueOf(resultCode)));
+            sendMessage(STARTED_FAILED_TYPE, buildMessage(hexPhone, " 注册失败 result >>>>", resultCode == -1 ? "未响应" : String.valueOf(resultCode)));
             //sendRegister();
         }
 
@@ -283,13 +315,14 @@ public class TCPClient {
             byte[] authenticationData = BitOperator.encode(message).doEncode().toArray();
             sendPacket(Unpooled.wrappedBuffer(new byte[]{0x07E}, authenticationData, new byte[]{0x7E}));
             log.info("{} 发送鉴权消息 >>> {}", phone, HexStringUtils.toHexString(authenticationData));
-            sendMessage(buildMessage(Long.toHexString(phone), " 发送鉴权消息 >>>>", HexStringUtils.toHexString(authenticationData)));
+            sendMessage(buildMessage(hexPhone, " 发送鉴权消息 >>>>", HexStringUtils.toHexString(authenticationData)));
             String key = buildKey(AUTHENTICATION, flowNumber);
             SyncFuture<?> receive = messageManager.receive(key);
             Object result = receive.get(5, TimeUnit.SECONDS);
             if (result != null) {
                 log.info("{} 鉴权成功 ", phone);
-                sendMessage(STARTED_SUCCESS_TYPE, buildMessage(Long.toHexString(phone), " 鉴权成功 "));
+                authenticationSuccess = "是";
+                sendMessage(STARTED_SUCCESS_TYPE, buildMessage(hexPhone, " 鉴权成功 "));
                 flowNumber++;
                 heartBeatTask = new ThreadUtils.SimpleTask<Object>() {
                     @Override
@@ -319,28 +352,61 @@ public class TCPClient {
                 ThreadUtils.executeByFixedAtFixRate(WebSocketController.THREAD_POOL_SIZE, uploadPositionTask, WebSocketController.interval, TimeUnit.SECONDS);
 
             } else {
-                sendMessage(STARTED_FAILED_TYPE, buildMessage(Long.toHexString(phone), " 鉴权失败 "));
+                sendMessage(STARTED_FAILED_TYPE, buildMessage(hexPhone, " 鉴权失败 "));
                 log.info("{} 鉴权失败 ", phone);
                 //sendAuthentication(code);
             }
         }
+
         public void sendLocation() throws InterruptedException {
             Location location = new Location();
+
             Message<Location> message = new Message<>(LOCATION, SizeUtils.getObjByteSize(location), phone, flowNumber, location);
             byte[] locationData = BitOperator.encode(message).doEncode().toArray();
             sendPacket(Unpooled.wrappedBuffer(new byte[]{0x07E}, locationData, new byte[]{0x7E}));
-            log.info("{} 发送位置消息 >>> {}", phone, HexStringUtils.toHexString(locationData));
+            Date sendDate = new Date();
+            String hexMessage = HexStringUtils.toHexString(locationData);
+            log.info("{} 发送位置消息 >>> {}", phone, hexMessage);
+            SendResponsePacket sendResponsePacket = null;
+            if (WebSocketController.hasSaveData) {
+                sendResponsePacket = new SendResponsePacket();
+                sendResponsePacket.setPhone(hexPhone);
+                sendResponsePacket.setSendPacket(hexMessage);
+                sendResponsePacket.setSendTime(sendDate);
+            }
+
             String key = buildKey(LOCATION, flowNumber);
             SyncFuture<?> receive = messageManager.receive(key);
             Object result = receive.get(WebSocketController.interval, TimeUnit.SECONDS);
+            flowNumber++;
+            gpsSendCount++;
+
+
+            int status = -1;
             if (result != null) {
-                int status = (int) result;
+                Message<PlatformCommonReply> messageResult = (Message<PlatformCommonReply>) result;
+                status = messageResult.getBody().getResult();
+                if (WebSocketController.hasSaveData && sendResponsePacket != null) {
+                    Date responseDate = new Date();
+                    sendResponsePacket.setResponseTime(responseDate);
+                    sendResponsePacket.setResponsePacket(messageResult.getResponseHexString());
+                    sendResponsePacket.setStatus(String.valueOf(status));
+                }
                 if (ResultStatusConstants.SUCCESS == status) {
-                    sendMessage(GPS_TYPE, " gps success  ");
+                    sendMessage(GPS_TYPE, " success ");
+                    gpsSuccessCount++;
                 }
             }
-            //sendMessage(buildMessage(Long.toHexString(phone), " 发送位置消息 >>> ", HexStringUtils.toHexString(locationData)));
-            flowNumber++;
+            if (ResultStatusConstants.SUCCESS != status) {
+                gpsFailedCount++;
+            }
+            if (WebSocketController.hasSaveData && sendResponsePacket != null) {
+                ExcelCache.gpsList.add(sendResponsePacket);
+            }
+
+
+            //sendMessage(buildMessage(hexPhone, " 发送位置消息 >>> ", HexStringUtils.toHexString(locationData)));
+
         }
 
 
@@ -361,41 +427,67 @@ public class TCPClient {
         }
     }
 
-    public static void main1(String[] args) throws ClassNotFoundException {
-        //1.发起注册
-        Register register = new Register();
-        Message<Register> message = new Message<>(MessageIdsConstants.REGISTER, SizeUtils.getObjByteSize(register), 0x013555555555L, 1, register);
-        byte[] registerData = BitOperator.encode(message).doEncode().toArray();
-        Unpooled.wrappedBuffer(new byte[]{0x07E}, registerData, new byte[]{0x7E});
-        System.out.println("发送注册信息 >>> " + HexStringUtils.toHexString(registerData));
-        //响应鉴权码
-        //发送鉴权码
-        sendAuthentication("test_token");
-        decodeRegisterReply(new byte[]{(byte) 0x81, 0x00, 0x00, 0x0D, 0x01, 0x35, 0x55, 0x55, 0x55, 0x55, 0x00, 0x00, 0x00, 0x01, 0x00, 0x74, 0x65, 0x73, 0x74, 0x5F, 0x74, 0x6F, 0x6B, 0x65, 0x6E, (byte) 0x8B});
-        sendLocation();
+    public String getHexPhone() {
+        return hexPhone;
     }
 
-    public static void sendAuthentication(String code) {
-        Authentication authentication = new Authentication(code);
-        Message<Authentication> message = new Message<>(MessageIdsConstants.AUTHENTICATION, SizeUtils.getObjByteSize(authentication), 0x013555555555L, 1, authentication);
-        byte[] authenticationData = BitOperator.encode(message).doEncode().toArray();
-        System.out.println("发送鉴权消息 >>> " + HexStringUtils.toHexString(authenticationData));
+    public void setHexPhone(String hexPhone) {
+        this.hexPhone = hexPhone;
     }
 
-    public static void sendLocation() {
-        Location location = new Location();
-        Message<Location> message = new Message<>(MessageIdsConstants.LOCATION, SizeUtils.getObjByteSize(location), 0x013555555555L, 1, location);
-        byte[] locationData = BitOperator.encode(message).doEncode().toArray();
-        System.out.println("发送位置消息 >>> " + HexStringUtils.toHexString(locationData));
+    public String getPlateNumber() {
+        return plateNumber;
     }
 
-    public static void decodePlatformCommonReply(byte[] data) {
-        Object o = BitOperator.decode(data, Message.class).genericType(PlatformCommonReply.class).doDecode();
+    public void setPlateNumber(String plateNumber) {
+        this.plateNumber = plateNumber;
     }
 
-    public static void decodeRegisterReply(byte[] data) {
-        Object o = BitOperator.decode(data, Message.class).genericType(RegisterReply.class).doDecode();
-        System.out.println("注册包");
+    public String getRegisteredSuccess() {
+        return registeredSuccess;
     }
 
+    public void setRegisteredSuccess(String registeredSuccess) {
+        this.registeredSuccess = registeredSuccess;
+    }
+
+    public String getAuthenticationSuccess() {
+        return authenticationSuccess;
+    }
+
+    public void setAuthenticationSuccess(String authenticationSuccess) {
+        this.authenticationSuccess = authenticationSuccess;
+    }
+
+    public String getAuthenticationCode() {
+        return authenticationCode;
+    }
+
+    public void setAuthenticationCode(String authenticationCode) {
+        this.authenticationCode = authenticationCode;
+    }
+
+    public int getGpsSendCount() {
+        return gpsSendCount;
+    }
+
+    public void setGpsSendCount(int gpsSendCount) {
+        this.gpsSendCount = gpsSendCount;
+    }
+
+    public int getGpsSuccessCount() {
+        return gpsSuccessCount;
+    }
+
+    public void setGpsSuccessCount(int gpsSuccessCount) {
+        this.gpsSuccessCount = gpsSuccessCount;
+    }
+
+    public int getGpsFailedCount() {
+        return gpsFailedCount;
+    }
+
+    public void setGpsFailedCount(int gpsFailedCount) {
+        this.gpsFailedCount = gpsFailedCount;
+    }
 }

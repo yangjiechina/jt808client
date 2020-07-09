@@ -1,4 +1,4 @@
-package com.yangjie.jt808.bean;
+package com.yangjie.jt808.bean.protocol;
 
 
 import com.yangjie.bitoperator.annotations.BitsProperty;
@@ -13,6 +13,7 @@ public class PlatformCommonReply {
 
     @BitsProperty(length = 1)
     private int result;
+
 
     public int getFlowNumber() {
         return flowNumber;
